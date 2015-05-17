@@ -1,25 +1,162 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
+author: "warnov"
+date: "Saturday, May 16, 2015"
 output: 
   html_document:
     keep_md: true
 ---
 
+```{r setoptions, echo=FALSE}
+options( warn =-1) #we don't need the warnings on the report
+library(knitr) #we need to explicitly load the library in order to use opts_chunk and apply exho true globally
+opts_chunk$set(echo=TRUE)
+```
 
 ## Loading and preprocessing the data
+This article assumes you have in your working directory the activity.zip file (from the project repository). 
 
+First, let's load this file into memory: 
 
+```{r}
+data <- read.csv(unz("activity.zip", "activity.csv"))
+```
 
 ## What is mean total number of steps taken per day?
+To get this answer, we need to create a table out from our data, summarizing using the *sum* operation. To do this, we'll be using the **data.table** package, then we will convert our dataframe to a table and with that table, make the desired operations.
 
+```{r}
+library(data.table)
+tdata<-data.table(data)
+tdatameans<-tdata[,sum(steps, na.rm=T),by=date]
+```
 
+Now let´s give some meaningful names to our results
+
+```{r}
+setnames(tdatameans,names(tdatameans),c('date','stepssum'))
+```
+
+Let's print the resulting table using the **xtable** package (this article assumes the package is already installed):
+
+```{r showtable, results='asis'}
+library(xtable)
+xtdatameans<-xtable(tdatameans)
+print(xtdatameans,type="html")
+```
+<br>
+In order to analyze how is the behavior of steps taken by day, let's see a histogram of the results:
+
+```{r}
+hist(tdatameans$stepssum, xlab = "Number of Steps", main = "Number of Steps Taken by Day")
+```
+
+Finally, we need to know the mean and median of the total number of steps taken per day:
+
+```{r}
+stepsmean<-mean(tdatameans$stepssum)
+stepsmedian<-median(tdatameans$stepssum)
+```
+
+With that beign said, the mean for the total steps taken by day is **`r round(stepsmean, digits=2)`** while the median will be **`r stepsmedian`**
 
 ## What is the average daily activity pattern?
+This time we are going to need to create a table grouping our data by intervals averaging the amount of steps taken at each interval, across all days:
 
+```{r}
+tdatameans<-tdata[,mean(steps, na.rm=T),by=interval]
+setnames(tdatameans,names(tdatameans),c('interval','stepsmean'))
+```
 
+And now with this dataset, we can make a time series plot:
+
+```{r}
+plot(x = tdatameans$interval, y=tdatameans$stepsmean, main='Time Series: Steps taken by Interval trough all the days', xlab="interval", ylab="steps mean", type="l")
+```
+
+As we need to know which is the interval with the maximum number of steps taken on average across all the days, we need to execute this code:
+
+```{r}
+maxscore<-tdatameans[tdatameans$stepsmean==max(tdatameans$stepsmean)]
+```
+
+In this way, we can conclude that the 5-minute interval that on average across all the days in the dataset, contains the maximum number of steps is the number **`r maxscore$interval[1]`** with an average of **`r round(maxscore$stepsmean[1], digits=2)`**
 
 ## Imputing missing values
+Now we are going to make some studies but this time NA values are going to be replaced with the value of the mean of steps for that interval.
 
+First let's find out how many NA values are in the data.
 
+```{r}
+nacount<-length(tdata$steps[is.na(tdata$steps)])
+```
+
+So, now that we now that we have **`r nacount`** NA values, let's get rid of them by replacing them with the mean of steps for the interval they are appearing. For this, we are going to execute this script:
+
+```{r cache=TRUE}
+#Let's copy our current data to a new dataset inr order to replace NAs
+tdatanotna<-tdata 
+#Iterating over the dataset, looking for NAs
+for(i in 1:dim(tdatanotna)[1]){
+  #If the element in the "i" position is NA, then we procede to replace it
+  if(is.na(tdatanotna$steps[i])){  
+    #Finding the interval corresponding to this NA value
+    ival<-tdatanotna$interval[i]
+    #We look for the steps mean for the interval found
+    stepmean<-tdatameans[tdatameans$interval==ival]$stepsmean   
+    #Replacing the NA value with the recent found steps mean value
+    tdatanotna$steps[i]<-stepmean
+  }
+}
+```
+
+If we repeat the first experiment of calculating the mean and median of the total of steps made each day, we could find some differences:
+
+```{r} 
+tdatasum<-tdatanotna[,sum(steps),by=date]
+setnames(tdatasum,names(tdatasum),c('date','stepssum'))
+```
+
+In order to analyze how is the behavior of steps taken by day with the NA values replaced, let's see a histogram of the results:
+
+```{r}
+hist(tdatasum$stepssum, xlab = "Number of Steps", main = "Number of Steps Taken by Day  (NA replaced)")
+```
+
+Finally, we need to know the mean and median of the total number of steps taken per day now that we don't have NA values:
+
+```{r}
+stepsmean<-mean(tdatasum$stepssum)
+stepsmedian<-median(tdatasum$stepssum)
+#Removing scientific notation
+options(scipen=999)  
+```
+
+With that beign said, the mean for the total steps taken by day is **`r round(stepsmean, digits=2)`** while the median will be **`r round(stepsmedian, digits=2)`**
+
+As we can see, replacing the NA values have gave us a *normal distribution* of the data in which the mean and the median have the same value.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+For this part the *weekdays()* function was used as well as the dataset with the filled-in missing values.
+
+We created a new factor variable in the dataset with two levels: "weekday" and "weekend". For this we had to rename the values from FALSE to TRUE wince we used the function weekdays to get the name of the days represented by the dates in the data:
+
+```{r}
+#Lattice used for the panel plot
+library(lattice)
+#We have to convert the column date from factor to date
+#in order to apply weekdays function
+tdatanotna$date<-as.Date(tdatanotna$date)
+#Adding the weekend column using the weekdays function and
+#evaluating if the day name is one of the weekend day names
+tdatanotna[,weekend:=factor(weekdays(tdatanotna$date)=="Saturday" | weekdays(tdatanotna$date)=="Sunday")]
+#Here we change the levels of the factors since we don't need true and false
+#but weekend and weekday
+levels(tdatanotna$weekend)[levels(tdatanotna$weekend)=="TRUE"] <- "weekend"
+levels(tdatanotna$weekend)[levels(tdatanotna$weekend)=="FALSE"] <- "weekday"
+#We make the plot to see the differences between patterns on wekdays and weekend
+xyplot( steps ~ interval | factor(weekend), data=tdatanotna, type = "l", layout=c(1,2))
+```   
+
+So, we can conclude that on weekends the most step activity is done on the last measured intervals while on weekdays, more steps are taken at the first intervals.
